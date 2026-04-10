@@ -1,65 +1,29 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="UTF-8">
     <title>PartyBox — Игрок</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 30px;
-            background: #f8f9fa;
-        }
-
-        h1 {
-            color: #333;
-        }
-
-        #game-area {
-            display: none;
-            margin-top: 30px;
-        }
-
-        input,
-        button {
-            font-size: 1.2em;
-            padding: 12px;
-            margin: 10px;
-            border-radius: 8px;
-        }
-
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-        }
-
-        #status {
-            margin-top: 20px;
-            font-size: 1.3em;
-        }
-    </style>
+    <link rel="stylesheet" href="/style.css">
 </head>
+<body class="player-bg">
+    <main class="container small">
+        <h1>📱 Кто я?</h1>
 
-<body>
-    <h1>📱 Кто я?</h1>
+        <section id="lobby">
+            <input id="room-code" placeholder="Код комнаты" maxlength="4" style="text-transform: uppercase;">
+            <input id="name" placeholder="Твоё имя">
+            <button class="btn btn-primary" onclick="joinRoom()">Зайти</button>
+            <button class="btn" onclick="refreshState()">Проверить комнату</button>
+        </section>
 
-    <div id="lobby">
-        <input id="room-code" placeholder="Код комнаты" maxlength="4" style="text-transform: uppercase;">
-        <input id="name" placeholder="Твоё имя">
-        <button onclick="joinRoom()">Зайти</button>
-    </div>
+        <section id="game-area" style="display:none;">
+            <h2>Лобби</h2>
+            <p id="description" class="hint">Вы в комнате</p>
+            <button class="btn" onclick="leaveRoom()">Покинуть комнату</button>
+        </section>
 
-    <div id="game-area">
-        <h2>Кто я?</h2>
-        <p id="description" style="font-size:1.4em; min-height:80px;"></p>
-
-        <input id="answer" placeholder="Напиши свой ответ" style="width:80%;">
-        <button onclick="submitAnswer()">Отправить ответ</button>
-    </div>
-
-    <div id="status"></div>
+        <div id="status" class="status"></div>
+    </main>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -69,32 +33,53 @@
         function joinRoom() {
             const code = document.getElementById("room-code").value.trim().toUpperCase();
             const name = document.getElementById("name").value.trim() || "Игрок";
-            if (code.length !== 4) return alert("Код — 4 символа");
+            if (code.length !== 4) {
+                alert("Код комнаты — 4 символа");
+                return;
+            }
 
             currentCode = code;
             socket.emit("join-room", { code, name });
+        }
+
+        function refreshState() {
+            const code = document.getElementById("room-code").value.trim().toUpperCase();
+            if (code.length !== 4) return;
+            socket.emit("get-room-state", { code });
+        }
+
+        function leaveRoom() {
+            if (!currentCode) return;
+            socket.emit("leave-room", { code: currentCode });
+            currentCode = null;
+            document.getElementById("lobby").style.display = "block";
+            document.getElementById("game-area").style.display = "none";
+            document.getElementById("status").innerText = "Вы вышли из комнаты";
+        }
+
+        function renderState(state) {
+            const count = state.players.length;
+            const host = state.players.find((p) => p.id === state.hostId);
+            document.getElementById("description").innerText = `Игроков: ${count}. Ведущий: ${host ? host.name : "—"}`;
+        }
+
+        socket.on("joined-room", (state) => {
             document.getElementById("lobby").style.display = "none";
-        }
-
-        function submitAnswer() {
-            const answer = document.getElementById("answer").value.trim();
-            if (!answer || !currentCode) return;
-
-            socket.emit("submit-answer", { code: currentCode, answer });
-            document.getElementById("status").innerHTML = "✅ Ответ отправлен!";
-        }
-
-        socket.on("game-started", (data) => {
             document.getElementById("game-area").style.display = "block";
-            document.getElementById("description").innerText = data.character
-                ? `Подсказка: ${data.character}`
-                : "Угадай персонажа!";
+            document.getElementById("status").innerText = "✅ Подключено. Ждите старта.";
+            renderState(state);
         });
 
-        socket.on("answer-received", () => {
-            document.getElementById("status").innerHTML = "✅ Ответ принят!";
+        socket.on("room-state-updated", renderState);
+        socket.on("room-state", (state) => {
+            currentCode = state.code;
+            document.getElementById("status").innerText = `Комната ${state.code} найдена`;
+            renderState(state);
+        });
+
+        socket.on("app-error", (message) => {
+            document.getElementById("status").innerText = `⚠️ ${message}`;
         });
     </script>
 </body>
-
 </html>

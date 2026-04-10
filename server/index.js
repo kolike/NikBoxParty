@@ -1,104 +1,141 @@
 const express = require("express");
 const http = require("http");
+const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-app.use(express.static("public"));
-
 const rooms = {};
-
-const characters = [
-  "Бэтмен", "Гарри Поттер", "Элон Маск", "Тейлор Свифт", "Шерлок Холмс",
-  "Железный Человек", "Майкл Джордан", "Мона Лиза", "Дарт Вейдер", "Фредди Меркьюри",
-  "Спанч Боб", "Дональд Трамп", "Леонардо да Винчи", "Кот Шрёдингера", "Бабушка из Красной Шапочки"
-];
+const socketToRoom = {};
 
 function generateCode() {
-  return Math.random().toString(36).substring(2, 6).toUpperCase();
+  let code = "";
+  do {
+    code = Math.random().toString(36).substring(2, 6).toUpperCase();
+  } while (rooms[code]);
+  return code;
 }
 
-io.on("connection", (socket) => {
-  console.log("Подключился:", socket.id);
+function buildRoomState(code) {
+  const room = rooms[code];
+  if (!room) return null;
+  return {
+    code,
+    hostId: room.hostId,
+    players: room.players,
+  };
+}
 
+function broadcastRoomState(code) {
+  const state = buildRoomState(code);
+  if (!state) return;
+  io.to(code).emit("room-state-updated", state);
+}
+
+function removeSocketFromRoom(socketId, code) {
+  const room = rooms[code];
+  if (!room) return;
+
+  room.players = room.players.filter((player) => player.id !== socketId);
+
+  if (room.hostId === socketId) {
+    room.hostId = room.players[0]?.id || null;
+  }
+
+  if (room.players.length === 0) {
+    delete rooms[code];
+    return;
+  }
+
+  broadcastRoomState(code);
+}
+
+app.use(express.static(path.join(__dirname, "..", "public")));
+app.get("/", (req, res) => {
+  res.redirect("/host.html");
+});
+
+io.on("connection", (socket) => {
   socket.on("create-room", () => {
+    const previousRoomCode = socketToRoom[socket.id];
+    if (previousRoomCode) {
+      socket.leave(previousRoomCode);
+      removeSocketFromRoom(socket.id, previousRoomCode);
+      delete socketToRoom[socket.id];
+    }
+
     const code = generateCode();
-    rooms[code] = { 
-      host: socket.id, 
-      players: [], 
-      gameState: null 
+    rooms[code] = {
+      hostId: socket.id,
+      players: [{ id: socket.id, name: "Ведущий" }],
     };
+    socketToRoom[socket.id] = code;
     socket.join(code);
-    socket.emit("room-created", code);
+    socket.emit("room-created", buildRoomState(code));
+    broadcastRoomState(code);
   });
 
   socket.on("join-room", ({ code, name }) => {
-    const room = rooms[code];
+    const normalizedCode = (code || "").trim().toUpperCase();
+    const room = rooms[normalizedCode];
     if (!room) {
-      socket.emit("error", "Комната не найдена");
+      socket.emit("app-error", "Комната не найдена");
       return;
     }
 
-    if (room.players.some(p => p.id === socket.id)) {
-      io.to(code).emit("player-joined", room.players);
+    const playerName = (name || "").trim();
+    if (!playerName) {
+      socket.emit("app-error", "Укажите имя игрока");
       return;
     }
 
-    room.players.push({ id: socket.id, name: name || "Игрок" });
-    socket.join(code);
-    io.to(code).emit("player-joined", room.players);
+    const previousRoomCode = socketToRoom[socket.id];
+    if (previousRoomCode && previousRoomCode !== normalizedCode) {
+      socket.leave(previousRoomCode);
+      removeSocketFromRoom(socket.id, previousRoomCode);
+      delete socketToRoom[socket.id];
+    }
+
+    if (!room.players.some((p) => p.id === socket.id)) {
+      room.players.push({ id: socket.id, name: playerName });
+    }
+
+    socketToRoom[socket.id] = normalizedCode;
+    socket.join(normalizedCode);
+    socket.emit("joined-room", buildRoomState(normalizedCode));
+    broadcastRoomState(normalizedCode);
   });
 
-  socket.on("start-game", (code) => {
-    const room = rooms[code];
+  socket.on("leave-room", ({ code }) => {
+    const normalizedCode = (code || "").trim().toUpperCase();
+    const room = rooms[normalizedCode];
     if (!room) return;
 
-    // Выбираем случайного персонажа
-    const character = characters[Math.floor(Math.random() * characters.length)];
-
-    room.gameState = {
-      phase: "playing",
-      character: character,
-      answers: {}   // socket.id → ответ игрока
-    };
-
-    console.log(`Игра началась в комнате ${code}. Персонаж: ${character}`);
-
-    // Сообщаем всем, что игра началась
-    io.to(code).emit("game-started", { character });
+    socket.leave(normalizedCode);
+    removeSocketFromRoom(socket.id, normalizedCode);
+    delete socketToRoom[socket.id];
   });
 
-  // Получаем ответ от игрока
-  socket.on("submit-answer", ({ code, answer }) => {
-    const room = rooms[code];
-    if (!room || !room.gameState) return;
-
-    room.gameState.answers[socket.id] = answer;
-
-    // Отправляем обновлённые ответы только хосту
-    const hostSocket = io.sockets.sockets.get(room.host);
-    if (hostSocket) {
-      hostSocket.emit("answers-updated", room.gameState.answers);
+  socket.on("get-room-state", ({ code }) => {
+    const normalizedCode = (code || "").trim().toUpperCase();
+    const state = buildRoomState(normalizedCode);
+    if (!state) {
+      socket.emit("app-error", "Комната не найдена");
+      return;
     }
-
-    // Также можно отправить подтверждение игроку
-    socket.emit("answer-received");
+    socket.emit("room-state", state);
   });
 
   socket.on("disconnect", () => {
-    for (let code in rooms) {
-      const room = rooms[code];
-      room.players = room.players.filter(p => p.id !== socket.id);
-      if (room.gameState) {
-        delete room.gameState.answers[socket.id];
-      }
-      io.to(code).emit("player-joined", room.players);
-    }
+    const roomCode = socketToRoom[socket.id];
+    if (!roomCode) return;
+    removeSocketFromRoom(socket.id, roomCode);
+    delete socketToRoom[socket.id];
   });
 });
 
-server.listen(3000, '0.0.0.0', () => {
+server.listen(3000, "0.0.0.0", () => {
   console.log("Сервер запущен → http://0.0.0.0:3000");
 });
