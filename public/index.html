@@ -1,197 +1,20 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NikBoxParty React Edition</title>
-  <style>
-    body { margin:0; font-family: Arial,sans-serif; background:#0f172a; color:#e2e8f0; }
-    .app { max-width:900px; margin:0 auto; padding:24px; }
-    .panel { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:16px; margin-top:16px; }
-    button { border:0; border-radius:10px; padding:10px 14px; margin-right:8px; cursor:pointer; }
-    .green { background:#22c55e; color:#052e16; }
-    .amber { background:#f59e0b; color:#451a03; }
-    input { width:100%; padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:white; margin-bottom:10px; }
-    .status { margin-top:10px; background:#1d4ed8; padding:10px; border-radius:8px; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; }
-    a { color:#93c5fd; }
-  </style>
+    <meta charset="UTF-8" />
+    <title>PartyBox</title>
 </head>
+
 <body>
-<div id="root"></div>
+<script src="/socket.io/socket.io.js"></script>
 
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/socket.io-client@4.8.3/dist/socket.io.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+    const socket = io();
 
-<script type="text/babel">
-  const { useEffect, useMemo, useState } = React;
-
-  function useSocket() {
-    return useMemo(() => io(), []);
-  }
-
-  function Home({ go }) {
-    return (
-      <div className="app">
-        <h1>NikBoxParty</h1>
-        <p>Полностью переписанная версия: React + серверная state-machine.</p>
-        <div className="row">
-          <button className="green" onClick={() => go('host')}>Экран ведущего</button>
-          <button className="amber" onClick={() => go('player')}>Экран игрока</button>
-        </div>
-      </div>
-    );
-  }
-
-  function Host({ go }) {
-    const socket = useSocket();
-    const [roomCode, setRoomCode] = useState('');
-    const [players, setPlayers] = useState([]);
-    const [answers, setAnswers] = useState({});
-    const [status, setStatus] = useState('Создайте комнату.');
-    const [phase, setPhase] = useState('lobby');
-
-    useEffect(() => {
-      const onRoomCreated = ({ code, state }) => {
-        setRoomCode(code);
-        setPlayers(state.players || []);
-        setAnswers(state.answers || {});
-        setPhase(state.phase);
-        setStatus(`Комната ${code} создана`);
-      };
-      const onRoomState = (state) => {
-        setPlayers(state.players || []);
-        setAnswers(state.answers || {});
-        setPhase(state.phase);
-      };
-      const onAnswers = (next) => setAnswers(next || {});
-      const onGame = (payload) => setStatus(`Игра началась: ${payload.character}`);
-      const onError = (message) => setStatus(`Ошибка: ${message}`);
-
-      socket.on('room-created', onRoomCreated);
-      socket.on('room-state-updated', onRoomState);
-      socket.on('answers-updated', onAnswers);
-      socket.on('game-started', onGame);
-      socket.on('app-error', onError);
-
-      return () => {
-        socket.off('room-created', onRoomCreated);
-        socket.off('room-state-updated', onRoomState);
-        socket.off('answers-updated', onAnswers);
-        socket.off('game-started', onGame);
-        socket.off('app-error', onError);
-        socket.disconnect();
-      };
-    }, [socket]);
-
-    return (
-      <div className="app">
-        <a href="#" onClick={(e)=>{e.preventDefault();go('home')}}>← На главную</a>
-        <h1>Ведущий</h1>
-        <div className="row">
-          <button className="green" onClick={() => socket.emit('create-room')}>Создать комнату</button>
-          <button className="amber" disabled={!roomCode || phase === 'playing'} onClick={() => socket.emit('start-game', { code: roomCode })}>Начать игру</button>
-        </div>
-        {roomCode && <h2>Код комнаты: {roomCode}</h2>}
-        <div className="status">{status}</div>
-
-        <div className="panel">
-          <h3>Игроки ({players.length})</h3>
-          <ul>{players.map(p => <li key={p.id}>{p.name}</li>)}</ul>
-        </div>
-
-        <div className="panel">
-          <h3>Ответы</h3>
-          <ul>
-            {Object.entries(answers).length === 0 && <li>Ответов пока нет</li>}
-            {Object.entries(answers).map(([id, answer]) => {
-              const player = players.find(p => p.id === id);
-              return <li key={id}><strong>{player?.name || id}</strong>: {answer}</li>;
-            })}
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
-  function Player({ go }) {
-    const socket = useSocket();
-    const [roomCode, setRoomCode] = useState('');
-    const [name, setName] = useState('');
-    const [character, setCharacter] = useState('');
-    const [answer, setAnswer] = useState('');
-    const [joined, setJoined] = useState(false);
-    const [status, setStatus] = useState('Введите код комнаты и имя.');
-
-    useEffect(() => {
-      const onJoined = () => { setJoined(true); setStatus('Вы подключились. Ждите старта игры.'); };
-      const onGame = (payload) => { setCharacter(payload.character || 'Неизвестно'); setStatus('Игра началась!'); };
-      const onAccepted = () => { setStatus('Ответ принят'); setAnswer(''); };
-      const onError = (message) => setStatus(`Ошибка: ${message}`);
-
-      socket.on('joined-room', onJoined);
-      socket.on('game-started', onGame);
-      socket.on('answer-received', onAccepted);
-      socket.on('app-error', onError);
-
-      return () => {
-        socket.off('joined-room', onJoined);
-        socket.off('game-started', onGame);
-        socket.off('answer-received', onAccepted);
-        socket.off('app-error', onError);
-        socket.disconnect();
-      };
-    }, [socket]);
-
-    const joinRoom = () => {
-      const normalized = roomCode.trim().toUpperCase();
-      if (normalized.length !== 4) {
-        setStatus('Код комнаты: 4 символа');
-        return;
-      }
-      setRoomCode(normalized);
-      socket.emit('join-room', { code: normalized, name: name.trim() || 'Игрок' });
-    };
-
-    const submit = () => {
-      socket.emit('submit-answer', { code: roomCode, answer });
-    };
-
-    return (
-      <div className="app">
-        <a href="#" onClick={(e)=>{e.preventDefault();go('home')}}>← На главную</a>
-        <h1>Игрок</h1>
-
-        <div className="panel">
-          <h3>Вход в комнату</h3>
-          <input placeholder="Код комнаты" value={roomCode} maxLength={4} onChange={(e)=>setRoomCode(e.target.value.toUpperCase())} />
-          <input placeholder="Ваше имя" value={name} onChange={(e)=>setName(e.target.value)} />
-          <button className="green" onClick={joinRoom}>Подключиться</button>
-        </div>
-
-        <div className="panel">
-          <h3>Раунд</h3>
-          <p>Персонаж: {character || 'ещё не выбран'}</p>
-          <input placeholder="Ваш ответ" value={answer} maxLength={80} onChange={(e)=>setAnswer(e.target.value)} disabled={!character || !joined} />
-          <button className="amber" disabled={!character || !answer.trim()} onClick={submit}>Отправить ответ</button>
-        </div>
-
-        <div className="status">{status}</div>
-      </div>
-    );
-  }
-
-  function App() {
-    const [screen, setScreen] = useState('home');
-
-    if (screen === 'host') return <Host go={setScreen} />;
-    if (screen === 'player') return <Player go={setScreen} />;
-    return <Home go={setScreen} />;
-  }
-
-  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    socket.on("connect", () => {
+        console.log("connected:", socket.id);
+    });
 </script>
 </body>
 </html>
