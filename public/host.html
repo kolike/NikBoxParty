@@ -1,69 +1,151 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <title>PartyBox — Host</title>
-    <link rel="stylesheet" href="/style.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 2.8em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.3em;
+            opacity: 0.9;
+            margin-bottom: 40px;
+        }
+
+        button {
+            font-size: 1.3em;
+            padding: 15px 30px;
+            margin: 15px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            background: #28a745;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            background: #218838;
+        }
+
+        #room-code {
+            font-size: 3.5em;
+            font-weight: bold;
+            margin: 30px 0;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 12px;
+            display: inline-block;
+            min-width: 300px;
+        }
+
+        #players {
+            margin-top: 40px;
+        }
+
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .player {
+            background: white;
+            color: #333;
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-size: 1.3em;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            min-width: 140px;
+        }
+    </style>
 </head>
-<body class="host-bg">
-    <main class="container">
-        <h1>🎮 PartyBox</h1>
-        <p class="subtitle">Экран ведущего</p>
 
-        <button class="btn btn-primary" onclick="createRoom()">Создать комнату</button>
-        <button class="btn btn-warning" onclick="refreshState()">Обновить состояние</button>
-        <button class="btn" onclick="leaveRoom()">Покинуть комнату</button>
+<body>
+    <h1>🎮 PartyBox</h1>
+    <p class="subtitle">Экран ведущего</p>
 
-        <div id="room-code" class="room-code"></div>
+    <button onclick="createRoom()">Создать новую комнату</button>
 
-        <section id="players">
-            <h2>Игроки (0)</h2>
-            <div class="player-list" id="player-list"></div>
-        </section>
-    </main>
+    <div id="room-code"></div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        let currentRoomCode = null;
+    <div id="players">
+        <h2>Игроки в комнате (0)</h2>
+        <div class="player-list" id="player-list"></div>
+    </div>
 
-        function createRoom() {
-            socket.emit("create-room");
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+    const socket = io();
+    let currentRoomCode = null;   // ← храним код надёжно
+
+    function createRoom() {
+        socket.emit("create-room");
+    }
+
+    function startGame() {
+        if (!currentRoomCode) {
+            alert("Сначала создайте комнату!");
+            return;
         }
+        socket.emit("start-game", currentRoomCode);
+    }
 
-        function refreshState() {
-            if (!currentRoomCode) return;
-            socket.emit("get-room-state", { code: currentRoomCode });
+    socket.on("room-created", (code) => {
+        currentRoomCode = code;
+        document.getElementById("room-code").innerHTML = `Код комнаты:<br><strong>${code}</strong>`;
+
+        // Добавляем кнопку "Начать игру", если её ещё нет
+        if (!document.getElementById("start-btn")) {
+            const startBtn = document.createElement("button");
+            startBtn.id = "start-btn";
+            startBtn.innerText = "▶ Начать игру";
+            startBtn.style.background = "#ffc107";
+            startBtn.style.color = "black";
+            startBtn.style.fontSize = "1.3em";
+            startBtn.style.marginTop = "20px";
+            startBtn.onclick = startGame;
+            document.body.appendChild(startBtn);
         }
+    });
 
-        function leaveRoom() {
-            if (!currentRoomCode) return;
-            socket.emit("leave-room", { code: currentRoomCode });
-            currentRoomCode = null;
-            document.getElementById("room-code").innerHTML = "";
-            document.querySelector("#players h2").innerText = "Игроки (0)";
-            document.getElementById("player-list").innerHTML = "";
-        }
+    socket.on("player-joined", (players) => {
+        const count = players.length;
+        document.querySelector("#players h2").innerText = `Игроки в комнате (${count})`;
 
-        function renderState(state) {
-            currentRoomCode = state.code;
-            document.getElementById("room-code").innerHTML = `Код комнаты: <strong>${state.code}</strong>`;
-            document.querySelector("#players h2").innerText = `Игроки (${state.players.length})`;
-            const list = document.getElementById("player-list");
-            list.innerHTML = "";
-            state.players.forEach((player) => {
-                const div = document.createElement("div");
-                div.className = "player-card";
-                div.innerText = player.id === state.hostId ? `👑 ${player.name}` : player.name;
-                list.appendChild(div);
-            });
-        }
+        const list = document.getElementById("player-list");
+        list.innerHTML = "";
 
-        socket.on("room-created", renderState);
-        socket.on("room-state-updated", renderState);
-        socket.on("room-state", renderState);
+        players.forEach(player => {
+            const div = document.createElement("div");
+            div.className = "player";
+            div.innerText = player.name;
+            list.appendChild(div);
+        });
+    });
 
-        socket.on("app-error", (message) => alert(message));
-    </script>
+    socket.on("game-started", () => {
+        alert("🎉 Игра началась!\n\nПока это просто заглушка.");
+        console.log("Игра стартовала для комнаты");
+    });
+</script>
 </body>
+
 </html>
