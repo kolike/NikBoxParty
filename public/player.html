@@ -1,100 +1,158 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
-    <meta charset="UTF-8">
-    <title>PartyBox — Игрок</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 30px;
-            background: #f8f9fa;
-        }
-
-        h1 {
-            color: #333;
-        }
-
-        #game-area {
-            display: none;
-            margin-top: 30px;
-        }
-
-        input,
-        button {
-            font-size: 1.2em;
-            padding: 12px;
-            margin: 10px;
-            border-radius: 8px;
-        }
-
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-        }
-
-        #status {
-            margin-top: 20px;
-            font-size: 1.3em;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>PartyBox — Игрок</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 30px; background: #f8f9fa; }
+    .card { max-width: 620px; margin: 0 auto; background: white; border-radius: 12px; padding: 18px; box-shadow: 0 6px 24px rgba(0,0,0,0.08); }
+    input, button, textarea { font-size: 1.05em; padding: 10px; margin: 8px 0; border-radius: 8px; width: 100%; box-sizing: border-box; }
+    button { border: none; color: white; background: #2563eb; cursor: pointer; }
+    textarea { min-height: 100px; resize: vertical; }
+    #game-area { display: none; }
+    #voting-area { display: none; }
+    #results-area { display: none; }
+    .option-btn { margin-bottom: 8px; }
+    #status { margin-top: 16px; min-height: 24px; }
+  </style>
 </head>
-
 <body>
-    <h1>📱 Кто я?</h1>
+  <div class="card" id="lobby">
+    <h1>📱 PartyBox</h1>
+    <input id="room-code" placeholder="Код комнаты" maxlength="4" style="text-transform: uppercase;" />
+    <input id="name" placeholder="Твоё имя" />
+    <button onclick="joinRoom()">Зайти</button>
+  </div>
 
-    <div id="lobby">
-        <input id="room-code" placeholder="Код комнаты" maxlength="4" style="text-transform: uppercase;">
-        <input id="name" placeholder="Твоё имя">
-        <button onclick="joinRoom()">Зайти</button>
-    </div>
+  <div class="card" id="game-area">
+    <h2>✍️ Добивка шутки</h2>
+    <p id="prompt" style="font-size:1.25em; font-weight:bold;"></p>
+    <textarea id="answer" maxlength="120" placeholder="Напиши самую смешную добивку..."></textarea>
+    <button onclick="submitAnswer()">Отправить добивку</button>
+  </div>
 
-    <div id="game-area">
-        <h2>Кто я?</h2>
-        <p id="description" style="font-size:1.4em; min-height:80px;"></p>
+  <div class="card" id="voting-area">
+    <h2>🗳 Голосование</h2>
+    <p id="vote-prompt" style="font-size:1.15em; font-weight:bold;"></p>
+    <div id="vote-options"></div>
+  </div>
 
-        <input id="answer" placeholder="Напиши свой ответ" style="width:80%;">
-        <button onclick="submitAnswer()">Отправить ответ</button>
-    </div>
+  <div class="card" id="results-area">
+    <h2>🏆 Результаты раунда</h2>
+    <ol id="results-list" style="text-align:left;"></ol>
+    <h3>Топ</h3>
+    <ol id="leaderboard" style="text-align:left;"></ol>
+  </div>
 
-    <div id="status"></div>
+  <div id="status"></div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        let currentCode = null;
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  let currentCode = null;
 
-        function joinRoom() {
-            const code = document.getElementById("room-code").value.trim().toUpperCase();
-            const name = document.getElementById("name").value.trim() || "Игрок";
-            if (code.length !== 4) return alert("Код — 4 символа");
+  function byId(id) { return document.getElementById(id); }
 
-            currentCode = code;
-            socket.emit("join-room", { code, name });
-            document.getElementById("lobby").style.display = "none";
-        }
+  function joinRoom() {
+    const code = byId('room-code').value.trim().toUpperCase();
+    const name = byId('name').value.trim() || 'Игрок';
 
-        function submitAnswer() {
-            const answer = document.getElementById("answer").value.trim();
-            if (!answer || !currentCode) return;
+    if (code.length !== 4) {
+      alert('Код — 4 символа');
+      return;
+    }
 
-            socket.emit("submit-answer", { code: currentCode, answer });
-            document.getElementById("status").innerHTML = "✅ Ответ отправлен!";
-        }
+    currentCode = code;
+    socket.emit('join-room', { code, name });
+  }
 
-        socket.on("game-started", (data) => {
-            document.getElementById("game-area").style.display = "block";
-            document.getElementById("description").innerText = data.character
-                ? `Подсказка: ${data.character}`
-                : "Угадай персонажа!";
-        });
+  function submitAnswer() {
+    const answer = byId('answer').value.trim();
+    if (!answer || !currentCode) return;
 
-        socket.on("answer-received", () => {
-            document.getElementById("status").innerHTML = "✅ Ответ принят!";
-        });
-    </script>
+    socket.emit('submit-answer', { code: currentCode, answer });
+  }
+
+  function submitVote(optionId) {
+    if (!currentCode) return;
+    socket.emit('submit-vote', { code: currentCode, optionId });
+  }
+
+  function hideGameBlocks() {
+    byId('game-area').style.display = 'none';
+    byId('voting-area').style.display = 'none';
+    byId('results-area').style.display = 'none';
+  }
+
+  socket.on('joined-room', () => {
+    byId('lobby').style.display = 'none';
+    byId('status').innerText = 'Ожидаем старт раунда...';
+  });
+
+  socket.on('game-started', ({ prompt }) => {
+    hideGameBlocks();
+    byId('game-area').style.display = 'block';
+    byId('prompt').innerText = prompt;
+    byId('answer').value = '';
+    byId('status').innerText = 'Напиши добивку и отправь.';
+  });
+
+  socket.on('answer-received', () => {
+    byId('status').innerText = '✅ Добивка отправлена. Ждём остальных.';
+  });
+
+  socket.on('voting-opened', ({ prompt, options }) => {
+    hideGameBlocks();
+    byId('voting-area').style.display = 'block';
+    byId('vote-prompt').innerText = prompt;
+
+    const container = byId('vote-options');
+    container.innerHTML = '';
+
+    options.forEach((option) => {
+      const button = document.createElement('button');
+      button.className = 'option-btn';
+      button.innerText = option.text;
+      button.onclick = () => submitVote(option.optionId);
+      container.appendChild(button);
+    });
+
+    byId('status').innerText = 'Выбери лучшую добивку (кроме своей).';
+  });
+
+  socket.on('vote-accepted', () => {
+    byId('status').innerText = '✅ Голос принят.';
+  });
+
+  socket.on('round-results', ({ results, leaderboard }) => {
+    hideGameBlocks();
+    byId('results-area').style.display = 'block';
+
+    const resultsList = byId('results-list');
+    resultsList.innerHTML = '';
+    results.forEach((item) => {
+      const li = document.createElement('li');
+      li.innerText = `${item.text} — ${item.votes} голос(ов)`;
+      resultsList.appendChild(li);
+    });
+
+    const top = byId('leaderboard');
+    top.innerHTML = '';
+    leaderboard.forEach((player) => {
+      const li = document.createElement('li');
+      li.innerText = `${player.name} — ${player.score}⭐`;
+      top.appendChild(li);
+    });
+
+    byId('status').innerText = 'Ждём следующий раунд от ведущего.';
+  });
+
+  socket.on('app-error', (message) => {
+    byId('status').innerText = `⚠️ ${message}`;
+    if (message.includes('Комната не найдена')) {
+      byId('lobby').style.display = 'block';
+    }
+  });
+</script>
 </body>
-
 </html>
