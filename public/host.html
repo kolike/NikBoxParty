@@ -1,151 +1,166 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
-    <meta charset="UTF-8">
-    <title>PartyBox — Host</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 30px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            min-height: 100vh;
-            margin: 0;
-        }
-
-        h1 {
-            font-size: 2.8em;
-            margin-bottom: 10px;
-        }
-
-        .subtitle {
-            font-size: 1.3em;
-            opacity: 0.9;
-            margin-bottom: 40px;
-        }
-
-        button {
-            font-size: 1.3em;
-            padding: 15px 30px;
-            margin: 15px;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            background: #28a745;
-            color: white;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        button:hover {
-            background: #218838;
-        }
-
-        #room-code {
-            font-size: 3.5em;
-            font-weight: bold;
-            margin: 30px 0;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 20px;
-            border-radius: 12px;
-            display: inline-block;
-            min-width: 300px;
-        }
-
-        #players {
-            margin-top: 40px;
-        }
-
-        .player-list {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .player {
-            background: white;
-            color: #333;
-            padding: 15px 25px;
-            border-radius: 12px;
-            font-size: 1.3em;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-            min-width: 140px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>PartyBox — Ведущий</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 24px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; min-height: 100vh; margin: 0; }
+    button { font-size: 1.05em; padding: 12px 20px; margin: 8px; border: none; border-radius: 10px; cursor: pointer; }
+    #room-code { font-size: 2.2em; font-weight: bold; margin: 16px 0; }
+    .block { max-width: 860px; margin: 14px auto; background: rgba(255,255,255,0.16); padding: 16px; border-radius: 12px; }
+    .list { text-align: left; margin: 0 auto; max-width: 700px; }
+    .list li { margin: 8px 0; }
+    .prompt { font-size: 1.35em; font-weight: bold; }
+    .muted { opacity: 0.92; }
+  </style>
 </head>
-
 <body>
-    <h1>🎮 PartyBox</h1>
-    <p class="subtitle">Экран ведущего</p>
+  <h1>🎮 PartyBox</h1>
+  <p class="muted">Экран ведущего</p>
 
-    <button onclick="createRoom()">Создать новую комнату</button>
+  <button onclick="createRoom()">Создать комнату</button>
+  <div id="room-code"></div>
 
-    <div id="room-code"></div>
+  <div class="block">
+    <h2>Игроки</h2>
+    <div id="players">Пока пусто</div>
+  </div>
 
-    <div id="players">
-        <h2>Игроки в комнате (0)</h2>
-        <div class="player-list" id="player-list"></div>
-    </div>
+  <div class="block">
+    <h2>Раунд</h2>
+    <p class="prompt" id="prompt">Нажмите «Начать раунд»</p>
+    <p id="progress" class="muted"></p>
+    <button id="start-btn" onclick="startGame()" style="background:#facc15;color:black;display:none;">▶ Начать раунд</button>
+    <button id="vote-btn" onclick="openVoting()" style="background:#22c55e;color:white;display:none;">🗳 Открыть голосование</button>
+    <button id="finish-btn" onclick="finishRound()" style="background:#ef4444;color:white;display:none;">🏁 Завершить раунд</button>
+  </div>
+
+  <div class="block">
+    <h2>Добивки (для контроля ведущего)</h2>
+    <ol id="answers" class="list"></ol>
+  </div>
+
+  <div class="block">
+    <h2>Топ игроков</h2>
+    <ol id="leaderboard" class="list"></ol>
+  </div>
 
 <script src="/socket.io/socket.io.js"></script>
-
 <script>
-    const socket = io();
-    let currentRoomCode = null;   // ← храним код надёжно
+  const socket = io();
+  let currentCode = null;
 
-    function createRoom() {
-        socket.emit("create-room");
+  function byId(id) { return document.getElementById(id); }
+
+  function createRoom() {
+    socket.emit('create-room');
+  }
+
+  function startGame() {
+    if (!currentCode) return;
+    socket.emit('start-game', { code: currentCode });
+  }
+
+  function openVoting() {
+    if (!currentCode) return;
+    socket.emit('open-voting', { code: currentCode });
+  }
+
+  function finishRound() {
+    if (!currentCode) return;
+    socket.emit('finish-round', { code: currentCode });
+  }
+
+  function renderPlayers(players) {
+    if (!players || players.length === 0) {
+      byId('players').innerText = 'Пока пусто';
+      return;
     }
+    byId('players').innerText = players.map((p) => `${p.name} (${p.score}⭐)`).join(' • ');
+  }
 
-    function startGame() {
-        if (!currentRoomCode) {
-            alert("Сначала создайте комнату!");
-            return;
-        }
-        socket.emit("start-game", currentRoomCode);
-    }
+  function renderLeaderboard(leaderboard) {
+    const list = byId('leaderboard');
+    list.innerHTML = '';
+    (leaderboard || []).forEach((player) => {
+      const li = document.createElement('li');
+      li.innerText = `${player.name} — ${player.score}⭐`;
+      list.appendChild(li);
+    });
+  }
 
-    socket.on("room-created", (code) => {
-        currentRoomCode = code;
-        document.getElementById("room-code").innerHTML = `Код комнаты:<br><strong>${code}</strong>`;
+  socket.on('room-created', (code) => {
+    currentCode = code;
+    byId('room-code').innerHTML = `Код комнаты: <strong>${code}</strong>`;
+    byId('start-btn').style.display = 'inline-block';
+  });
 
-        // Добавляем кнопку "Начать игру", если её ещё нет
-        if (!document.getElementById("start-btn")) {
-            const startBtn = document.createElement("button");
-            startBtn.id = "start-btn";
-            startBtn.innerText = "▶ Начать игру";
-            startBtn.style.background = "#ffc107";
-            startBtn.style.color = "black";
-            startBtn.style.fontSize = "1.3em";
-            startBtn.style.marginTop = "20px";
-            startBtn.onclick = startGame;
-            document.body.appendChild(startBtn);
-        }
+  socket.on('player-joined', (players) => {
+    renderPlayers(players);
+  });
+
+  socket.on('game-started', ({ prompt, leaderboard }) => {
+    byId('prompt').innerText = prompt;
+    byId('progress').innerText = 'Ждём добивки от игроков...';
+    byId('answers').innerHTML = '';
+    byId('vote-btn').style.display = 'inline-block';
+    byId('finish-btn').style.display = 'none';
+    renderLeaderboard(leaderboard);
+  });
+
+  socket.on('answers-updated', ({ submittedCount, totalPlayers, answers }) => {
+    byId('progress').innerText = `Ответов: ${submittedCount} / ${totalPlayers}`;
+
+    const list = byId('answers');
+    list.innerHTML = '';
+
+    Object.values(answers || {}).forEach((value) => {
+      const li = document.createElement('li');
+      li.innerText = value;
+      list.appendChild(li);
+    });
+  });
+
+  socket.on('voting-opened', ({ prompt, options }) => {
+    byId('prompt').innerText = `${prompt} (голосование)`;
+    byId('progress').innerText = 'Голосование открыто. Игроки выбирают лучший вариант.';
+
+    const list = byId('answers');
+    list.innerHTML = '';
+    options.forEach((opt) => {
+      const li = document.createElement('li');
+      li.innerText = `${opt.optionId}. ${opt.text}`;
+      list.appendChild(li);
     });
 
-    socket.on("player-joined", (players) => {
-        const count = players.length;
-        document.querySelector("#players h2").innerText = `Игроки в комнате (${count})`;
+    byId('vote-btn').style.display = 'none';
+    byId('finish-btn').style.display = 'inline-block';
+  });
 
-        const list = document.getElementById("player-list");
-        list.innerHTML = "";
+  socket.on('votes-updated', ({ votedCount, totalPlayers }) => {
+    byId('progress').innerText = `Голосов: ${votedCount} / ${totalPlayers}`;
+  });
 
-        players.forEach(player => {
-            const div = document.createElement("div");
-            div.className = "player";
-            div.innerText = player.name;
-            list.appendChild(div);
-        });
+  socket.on('round-results', ({ prompt, results, leaderboard }) => {
+    byId('prompt').innerText = `${prompt} — результаты`;
+    byId('progress').innerText = 'Раунд завершён. Можно запускать следующий.';
+
+    const list = byId('answers');
+    list.innerHTML = '';
+    results.forEach((item) => {
+      const li = document.createElement('li');
+      li.innerText = `${item.text} — ${item.votes} голос(ов)`;
+      list.appendChild(li);
     });
 
-    socket.on("game-started", () => {
-        alert("🎉 Игра началась!\n\nПока это просто заглушка.");
-        console.log("Игра стартовала для комнаты");
-    });
+    byId('finish-btn').style.display = 'none';
+    byId('vote-btn').style.display = 'none';
+    renderLeaderboard(leaderboard);
+  });
+
+  socket.on('app-error', (message) => {
+    alert(message);
+  });
 </script>
 </body>
-
 </html>
